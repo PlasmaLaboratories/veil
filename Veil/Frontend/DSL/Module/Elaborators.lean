@@ -695,6 +695,70 @@ where
           #model_check {instTerm} {theoryExample}"
       `({})
 
+  /-- Does this assignment leave domain dimension `domainIdx` unrestricted?
+      Missing and capitalized arguments become `none` in `FieldUpdatePat`. -/
+  fieldUpdateIsUnbounded (field : StateComponent) (domainIdx : Nat) (lhs : Term) : Bool :=
+    if lhs.raw.getId == field.name then
+      true
+    else
+      match lhs.isApp? with
+      | some (id, args) =>
+        id.getId == field.name &&
+          (domainIdx >= args.size || isCapital args[domainIdx]!.raw.getId)
+      | none => false
+
+  /-- Syntactically detect an update that can force this domain dimension into
+      the hybrid representation's canonical fallback. -/
+  procedureHasUnboundedFieldUpdate
+      (field : StateComponent) (domainIdx : Nat) (proc : ProcedureSpecification) : Bool :=
+    (proc.code.raw.find? fun stx =>
+      match stx with
+      | `(Term.doSeqItem| $lhs:term := *)
+      | `(Term.doSeqItem| $lhs:term := $_rhs:term)
+      | `(Term.doSeqItem| $lhs:term ← $_rhs:term) =>
+        fieldUpdateIsUnbounded field domainIdx lhs
+      | _ => false).isSome
+
+  /-- The default concrete representation falls back to a hybrid field for
+      non-enumerable relation/function domains. An unrestricted update can turn
+      such a field into a canonical function, which has no sound fingerprint
+      for explicit-state deduplication. Refuse those model-checking queries
+      before search instead of allowing distinct states to collapse. -/
+  checkModelCheckDomains (mod : Module) (instTerm : Term) (stx : Syntax) : CommandElabM Unit := do
+    let inst := mkVeilImplementationDetailIdent `inst
+    let params ← mod.uninterpretedParamIdents
+    let instantiationType := mkIdent (mod.name ++ instantiationTypeName)
+    let repConfigs ← resolveConcreteRepConfigs mod._concreteRepConfig
+    let withInstantiation (body : Term) : CommandElabM Term := do
+      let mut body := body
+      for p in params.reverse do
+        body ← `(let $p:ident := $inst.$p; $body)
+      `(let $inst : $instantiationType := $instTerm; $body)
+    for field in mod.mutableComponents do
+      unless field.kind == .relation || field.kind == .function do
+        continue
+      let usesCanonicalRepresentation :=
+        match field.kind with
+        | .relation => repConfigs.relationConfig.kind == .canonical
+        | .function => repConfigs.functionConfig.kind == .canonical
+        | _ => false
+      for domainIdx in [:field.domainTerms.size] do
+        let domain := field.domainTerms[domainIdx]!
+        let requirement ← `($(mkIdent ``Veil.Enumeration) $domain)
+        let check ← withInstantiation (← `(let _ : $requirement := inferInstance; True))
+        try
+          liftTermElabM <| Term.withoutErrToSorry do
+            let _ ← Term.elabTerm check (mkSort .zero)
+        catch _ =>
+          let hasUnboundedUpdate :=
+            mod.procedures.any fun proc =>
+              proc.info.isTransition ||
+                procedureHasUnboundedFieldUpdate field domainIdx proc
+          if usesCanonicalRepresentation || hasUnboundedUpdate then
+            throwErrorAt stx m!"Explicit-state model checking cannot soundly fingerprint field \
+              '{field.name}': its non-enumerable domain can be represented canonically after an \
+              unrestricted update. Use a finite instantiation or SMT verification instead."
+
   /-- Generate the model source for compilation:
       1. Insert `set_option veil.__modelCheckCompileMode true` after imports
       2. Keep everything up to the point where the spec was finalized
@@ -974,6 +1038,7 @@ where
     if assumptionsHoldBy.isSome && !(← isModelCheckCompileMode) && !mod.assumptions.isEmpty then
       checkTheorySatisfiesAssumptions mod instTerm theoryTerm assumptionsHoldBy
     mod.ensureExecutableModelCheckerDefinitions
+    checkModelCheckDomains mod instTerm stx
     -- Resolve parallelCfg: sequential flag takes precedence, otherwise default to parallel
     let parallelCfg ← match config.sequential, config.parallelCfg with
       | true, _ => pure none
