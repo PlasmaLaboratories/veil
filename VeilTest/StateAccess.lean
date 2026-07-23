@@ -24,9 +24,9 @@ after_init {
 }
 
 #guard_msgs in
-action with_block (b : block) {
+action with_block (value : block) {
   let b' ← pick block
-  return (b, b')
+  return (value, b')
 }
 
 #guard_msgs in
@@ -52,7 +52,7 @@ transition try_assign_immutable' (x : block) {
 }
 
 #guard_msgs in
-action double_bind (r : Int) {
+action double_bind (value : Int) {
     let (bb, b') ← with_block b
  }
 

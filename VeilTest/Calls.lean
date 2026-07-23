@@ -39,8 +39,8 @@ action call_empty {
 #eval isElaboratedCorrectly ``call_empty
 
 #guard_msgs(drop warning) in
-action f (n : Nat) (x : node) {
-  return x
+action f (n : Nat) (value : node) {
+  return value
 }
 
 /-- info: true -/
