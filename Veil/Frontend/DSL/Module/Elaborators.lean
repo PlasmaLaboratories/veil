@@ -55,17 +55,17 @@ def elabModuleDeclaration : CommandElab := fun stx => do
     let genv ← globalEnv.get
     let name := modName.getId
     let lenv ← localEnv.get
-    if let some mod := lenv.currentModule then
-      throwError s!"Module {mod.name} is already open, but you are now trying to open module {name}. Nested modules are not supported!"
+    if let some openModule := lenv.currentModule then
+      throwError s!"Module {openModule} is already open, but you are now trying to open module {name}. Nested modules are not supported!"
     elabVeilCommand $ ← `(open Veil)
     elabVeilCommand $ ← `(namespace $modName)
     if genv.containsModule name then
-      logInfo "Module {name} has been previously defined. Importing it here."
-      let mod := genv.modules[name]!
-      localEnv.modifyModule (fun _ => mod)
+      logInfo m!"Module {name} has been previously defined. Importing it here."
     else
       let mod ← Module.freshWithName name
-      localEnv.modifyModule (fun _ => mod)
+      globalEnv.modify fun genv =>
+        { genv with modules := genv.modules.insert name mod }
+    localEnv.modify fun lenv => { lenv with currentModule := some name }
   | _ => throwUnsupportedSyntax
 
 @[command_elab Veil.typeDeclaration]

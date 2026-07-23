@@ -11,7 +11,11 @@ open Lean
 namespace Veil
 
 structure LocalEnvironment where
-  currentModule : Option Module
+  /-- The name of the Veil module whose namespace is currently open.
+  This marker is scoped so closing the module namespace clears it. The mutable
+  module record itself lives in `globalEnv`, where nested command scopes cannot
+  discard declaration updates. -/
+  currentModule : Option Name
 deriving Inhabited
 
 structure VCManagerEnvironment where
@@ -58,20 +62,22 @@ initialize frontendNotification : Std.Condvar ← Std.Condvar.new
 is re-elaborated in the editor. -/
 initialize vcServerStarted : Std.Mutex Bool ← Std.Mutex.new false
 
-initialize globalEnv : SimpleScopedEnvExtension GlobalEnvironment GlobalEnvironment ←
-  registerSimpleScopedEnvExtension {
-    initial := default
-    addEntry := fun _ s' => s'
-  }
+initialize globalEnv : EnvExtension GlobalEnvironment ←
+  registerEnvExtension (pure default)
 
-def localEnv.modifyModule [Monad m] [MonadEnv m] (f : Option Module → Module) : m Unit :=
-  localEnv.modify (fun s => { s with currentModule := f s.currentModule })
+def localEnv.modifyModule [Monad m] [MonadEnv m] [MonadError m]
+    (f : Option Module → Module) : m Unit := do
+  let some name := (← localEnv.get).currentModule
+    | throwError "cannot update a Veil module outside of a module namespace"
+  globalEnv.modify fun genv =>
+    { genv with modules := genv.modules.insert name (f genv.modules[name]?) }
 
 def getCurrentModule [Monad m] [MonadEnv m] [MonadError m] (errMsg : MessageData := m!"getCurrentModule called outside of a module") : m Module := do
-  if let some mod := (← localEnv.get).currentModule then
-    return mod
-  else
-    throwError errMsg
+  let some name := (← localEnv.get).currentModule
+    | throwError errMsg
+  let some mod := (← globalEnv.get).modules[name]?
+    | throwError m!"internal error: active Veil module {name} is missing from the environment"
+  return mod
 
 namespace Frontend
 
@@ -94,8 +100,7 @@ section DevelopingTools
 
 open Lean Meta Elab Command in
 elab "veil_set_option " o:ident v:term : command => do
-  let lenv ← localEnv.get
-  let some mod := lenv.currentModule | throwError s!"Not in a module"
+  let mod ← getCurrentModule (errMsg := "Not in a module")
   let v ← liftTermElabM <| Term.elabTerm v (mkConst ``Bool)
   let b := if v == mkConst ``Bool.true then true else false
   match o.getId with
