@@ -261,6 +261,10 @@ private def throwIfNoInitializerDefined (mod : Module) : CommandElabM Unit := do
   unless mod.procedures.any (·.info matches .initializer) do
     throwError "no `after_init` block has been defined for this specification; every Veil module must have one"
 
+private def markDeclarationPending (mod : Module) (stx : Syntax) : CommandElabM Unit :=
+  localEnv.modifyModule (fun _ =>
+    { mod with _failedDeclarations := mod._failedDeclarations.push stx })
+
 /-- Crystallizes the specification of the module, i.e. it finalizes the set of
 `procedures` and `assertions`. The `stx` parameter is the syntax of the command
 that triggered the finalization; it is stored for use by `#model_check` when
@@ -268,6 +272,12 @@ generating compiled model source. -/
 def Module.ensureSpecIsFinalized (mod : Module) (stx : Syntax) : CommandElabM Module := do
   if mod.isSpecFinalized then
     return mod
+  if (← get).messages.hasErrors then
+    throwErrorAt stx m!"Cannot finalize Veil module {mod.name} while earlier elaboration errors are present."
+  unless mod._failedDeclarations.isEmpty do
+    let count := mod._failedDeclarations.size
+    let noun := if count == 1 then "declaration failed" else "declarations failed"
+    throwErrorAt stx m!"Cannot finalize Veil module {mod.name}: {count} Veil {noun} to elaborate."
   let mod ← mod.ensureStateIsDefined
   throwIfNoInitializerDefined mod
   warnIfNoInvariantsDefined mod
@@ -481,6 +491,7 @@ def elabInitializer : CommandElab := fun stx => do
     let mut mod ← getCurrentModule (errMsg := "You cannot elaborate an initializer outside of a Veil module!")
     mod ← mod.ensureStateIsDefined
     mod.throwIfSpecAlreadyFinalized
+    markDeclarationPending mod stx
     let new_mod ← match stx with
     | `(command|after_init {$l:doSeq}) => mod.defineProcedure (ProcedureInfo.initializer) .none .none l stx
     | _ => throwUnsupportedSyntax
@@ -494,6 +505,7 @@ def elabProcedure : CommandElab := fun stx => do
     let mut mod ← getCurrentModule (errMsg := "You cannot elaborate an action outside of a Veil module!")
     mod ← mod.ensureStateIsDefined
     mod.throwIfSpecAlreadyFinalized
+    markDeclarationPending mod stx
     let new_mod ← match stx with
     | `(command|action $nm:ident $br:explicitBinders ? {$l:doSeq}) => mod.defineProcedure (ProcedureInfo.action nm.getId) br .none l stx
     | `(command|procedure $nm:ident $br:explicitBinders ? {$l:doSeq}) => mod.defineProcedure (ProcedureInfo.procedure nm.getId) br .none l stx
@@ -508,6 +520,7 @@ def elabTransition : CommandElab := fun stx => do
     let mut mod ← getCurrentModule (errMsg := "You cannot elaborate a transition outside of a Veil module!")
     mod ← mod.ensureStateIsDefined
     mod.throwIfSpecAlreadyFinalized
+    markDeclarationPending mod stx
     let new_mod ← match stx with
     | `(command|transition $nm:ident $br:explicitBinders ? { $t:term }) =>
       -- check immutability of changed fields
@@ -544,6 +557,7 @@ def elabProcedureWithSpec : CommandElab := fun stx => do
     let mut mod ← getCurrentModule (errMsg := "You cannot elaborate an action outside of a Veil module!")
     mod ← mod.ensureStateIsDefined
     mod.throwIfSpecAlreadyFinalized
+    markDeclarationPending mod stx
     let new_mod ← match stx with
     | `(command|action $nm:ident $br:explicitBinders ? $spec:doSeq {$l:doSeq}) => mod.defineProcedure (ProcedureInfo.action nm.getId) br spec l stx
     | `(command|procedure $nm:ident $br:explicitBinders ? $spec:doSeq {$l:doSeq}) => mod.defineProcedure (ProcedureInfo.procedure nm.getId) br spec l stx
@@ -558,6 +572,7 @@ def elabGhostDefinition : CommandElab := fun stx => do
     let mut mod ← getCurrentModule (errMsg := "You cannot elaborate a ghost definition outside of a Veil module!")
     mod ← mod.ensureStateIsDefined
     mod.throwIfSpecAlreadyFinalized
+    markDeclarationPending mod stx
     let new_mod ← match stx with
     | `(command|$[theory%$forTheory]? ghost relation $nm:ident $br:explicitBinders ? := $t:term) =>
       mod.defineGhostDefinition nm.getId br t (justTheory := forTheory.isSome) (isRelation := true)
@@ -571,6 +586,7 @@ def elabAssertion : CommandElab := fun stx => do
   let mut mod ← getCurrentModule (errMsg := "You cannot declare an assertion outside of a Veil module!")
   mod ← mod.ensureStateIsDefined
   mod.throwIfSpecAlreadyFinalized
+  markDeclarationPending mod stx
   -- TODO: handle assertion sets correctly
   let assertion : StateAssertion ← match stx with
   | `(command|assumption $name:propertyName ? $prop:term) => mod.mkAssertion .assumption name prop stx

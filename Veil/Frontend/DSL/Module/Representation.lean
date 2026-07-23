@@ -374,6 +374,11 @@ structure Module where
   can still be added after this. -/
   protected _specFinalizedAt : Option Syntax := none
 
+  /-- User declarations that started elaborating but did not finish. Keeping
+  these in the module record makes finalization fail closed after command-error
+  recovery (for example, when `#guard_msgs` consumes the original error). -/
+  protected _failedDeclarations : Array Syntax := #[]
+
   /-- Assertions can be grouped into "sets", which are checked
   independently of each other. Sets are per-module. By default, all
   assertions are added to the same set. -/
