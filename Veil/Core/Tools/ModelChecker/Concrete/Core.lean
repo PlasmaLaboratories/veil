@@ -220,11 +220,16 @@ def checkViolationsAndMaybeTerminate
   (hasSuccessfulTransition : Bool)
   (assertionFailures : List (Int × σ)) :
   List (σₕ × ViolationKind) × Option (EarlyTerminationReason σₕ) :=
+  let reachedDepthBound := params.earlyTerminationConditions.any fun
+    | .reachedDepthBound bound => completedDepth >= bound
+    | _ => false
   -- Compute all violation conditions once
-  let safetyViolations := params.invariants.filterMap fun p =>
-    if !p.holdsOn th curr then some p.name else none
+  let safetyViolations := if reachedDepthBound then [] else
+    params.invariants.filterMap fun p =>
+      if !p.holdsOn th curr then some p.name else none
   let safetyViolation := !safetyViolations.isEmpty
-  let deadlock := !hasSuccessfulTransition && !params.terminating.holdsOn th curr
+  let deadlock := !reachedDepthBound && !hasSuccessfulTransition && !params.terminating.holdsOn th curr
+  let assertionFailures := if reachedDepthBound then [] else assertionFailures
 
   -- Collect all violations to add in a single list
   let newViolations : List (σₕ × ViolationKind) :=
