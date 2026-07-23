@@ -446,7 +446,9 @@ def elabCheckInvariants : CommandElab := fun stx => do
   -- Use dynamic trace class name for detailed profiling
   withTraceNode `veil.perf.elaborator.checkInvariants (fun _ => return "#check_invariants") do
     -- Skip in compilation mode (no verification feedback needed)
-    if ← isModelCheckCompileMode then return
+    if ← isModelCheckCompileMode then
+      warnVerificationSkippedAt stx "#check_invariants"
+      return
     let mod ← getCurrentModule (errMsg := "You cannot #check_invariant outside of a Veil module!")
     mod.throwIfSpecNotFinalized
     runFilteredInvariantCheck stx mod VCMetadata.isInduction
@@ -454,7 +456,9 @@ def elabCheckInvariants : CommandElab := fun stx => do
 @[command_elab Veil.checkAction]
 def elabCheckAction : CommandElab := fun stx => do
   withTraceNode `veil.perf.elaborator.checkAction (fun _ => return "#check_action") do
-    if ← isModelCheckCompileMode then return
+    if ← isModelCheckCompileMode then
+      warnVerificationSkippedAt stx "#check_action"
+      return
     let mod ← getCurrentModule (errMsg := "You cannot #check_action outside of a Veil module!")
     mod.throwIfSpecNotFinalized
     unless stx.getKind == `Veil.checkAction do
@@ -603,9 +607,11 @@ def elabGenSpec : CommandElab := fun stx => do
     localEnv.modifyModule (fun _ => mod)
 
 @[command_elab Veil.genTheorems]
-def elabGenTheorems : CommandElab := fun _stx => do
+def elabGenTheorems : CommandElab := fun stx => do
   withTraceNode `veil.perf.elaborator.genTheorems (fun _ => return "#gen_theorems") do
-    if ← isModelCheckCompileMode then return
+    if ← isModelCheckCompileMode then
+      warnVerificationSkippedAt stx "#gen_theorems"
+      return
     let mod ← getCurrentModule (errMsg := "You cannot #gen_theorems outside of a Veil module!")
     mod.throwIfSpecNotFinalized
     let _ ← Verifier.waitFilteredSync (fun _ => true)
