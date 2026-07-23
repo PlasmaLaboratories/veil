@@ -64,7 +64,7 @@ syntax traceSpec := (traceLine colEq)*
 
 syntax expected_smt_result "trace" ("[" ident "]")? "{"
   traceSpec
-"}" (term)? : command
+withPosition("}" (lineEq term)?) : command
 
 
 namespace Veil
