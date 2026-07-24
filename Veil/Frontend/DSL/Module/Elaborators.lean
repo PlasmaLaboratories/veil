@@ -68,10 +68,15 @@ def elabModuleDeclaration : CommandElab := fun stx => do
     localEnv.modify fun lenv => { lenv with currentModule := some name }
   | _ => throwUnsupportedSyntax
 
+private def markDeclarationPending (mod : Module) (stx : Syntax) : CommandElabM Unit :=
+  localEnv.modifyModule (fun _ =>
+    { mod with _failedDeclarations := mod._failedDeclarations.push stx })
+
 @[command_elab Veil.typeDeclaration]
 def elabTypeDeclaration : CommandElab := fun stx => do
   let mod ← getCurrentModule (errMsg := "You cannot declare a type outside of a Veil module!")
   mod.throwIfStateAlreadyDefined
+  markDeclarationPending mod stx
   match stx with
   | `(type $id:ident) => do
       let mod ← mod.declareUninterpretedSort id.getId stx
@@ -82,6 +87,7 @@ def elabTypeDeclaration : CommandElab := fun stx => do
 def elabParameterDeclaration : CommandElab := fun stx => do
   let mod ← getCurrentModule (errMsg := "You cannot declare a parameter outside of a Veil module!")
   mod.throwIfStateAlreadyDefined
+  markDeclarationPending mod stx
   let (id, tp) ← match stx with
   | `(param $id:ident : $tp:term) => pure (id, tp)
   | _ => throwUnsupportedSyntax
@@ -95,6 +101,7 @@ def elabParameterDeclaration : CommandElab := fun stx => do
 def elabStateComponent : CommandElab := fun stx => do
   let mod ← getCurrentModule (errMsg := "You cannot declare a state component outside of a Veil module!")
   mod.throwIfStateAlreadyDefined
+  markDeclarationPending mod stx
   let new_mod : Module ← match stx with
   | `($mutab:stateMutability ? $kind:stateComponentKind $name:ident $br:bracketedBinder* : $dom:term) =>
     defineStateComponentFromSyntax mod mutab kind name br dom stx
@@ -134,6 +141,7 @@ where
 def elabInstantiate : CommandElab := fun stx => do
   let mod ← getCurrentModule (errMsg := "You cannot instantiate a typeclass outside of a Veil module!")
   mod.throwIfStateAlreadyDefined
+  markDeclarationPending mod stx
   let new_mod : Module ← match stx with
   | `(instantiate $inst:ident : $tp:term) => do
     let p : Parameter := { kind := .moduleTypeclass .userDefined, name := inst.getId, «type» := tp, userSyntax := stx }
@@ -145,6 +153,7 @@ def elabInstantiate : CommandElab := fun stx => do
 def elabConcreteRepresentation : CommandElab := fun stx => do
   let mod ← getCurrentModule (errMsg := "You cannot configure concrete representation outside of a Veil module!")
   mod.throwIfStateAlreadyDefined
+  markDeclarationPending mod stx
   match stx with
   | `(veil_set_field_representation $c:concreteRepField $typeName:ident) => do
     let kind := match c with
@@ -170,8 +179,12 @@ def elabEnumDeclaration : CommandElab := fun stx => do
     -- Declare the enum sort (using .enumSort instead of .uninterpretedSort)
     let mod ← getCurrentModule (errMsg := "You cannot declare an enum outside of a Veil module!")
     mod.throwIfStateAlreadyDefined
+    markDeclarationPending mod stx
     let mod ← mod.declareUninterpretedSort id.getId stx .enumSort
-    localEnv.modifyModule (fun _ => mod)
+    -- Nested generated commands need the enum sort, but the outer enum
+    -- declaration must remain pending until every generated command succeeds.
+    localEnv.modifyModule (fun _ =>
+      { mod with _failedDeclarations := mod._failedDeclarations.push stx })
     -- Declare an axiomatisation class for the enum type
     let (class_name, class_decl) ← mkEnumAxiomatisation id elems
     elabVeilCommand class_decl
@@ -183,6 +196,12 @@ def elabEnumDeclaration : CommandElab := fun stx => do
     trace[veil.debug] "Elaborated enum instance: {← liftTermElabM <|Lean.PrettyPrinter.formatTactic instanceV}"
     elabVeilCommand instanceV
     elabVeilCommand $ ← `(open $class_name:ident)
+    -- Preserve the module updates made by the nested `instantiate` command
+    -- while clearing only this outer declaration's pending marker.
+    localEnv.modifyModule fun
+      | some current =>
+        { current with _failedDeclarations := mod._failedDeclarations }
+      | none => mod
   | _ => throwUnsupportedSyntax
 
 /-- Check if the syntax stack contains a Veil procedure context.
@@ -268,6 +287,10 @@ generating compiled model source. -/
 def Module.ensureSpecIsFinalized (mod : Module) (stx : Syntax) : CommandElabM Module := do
   if mod.isSpecFinalized then
     return mod
+  unless mod._failedDeclarations.isEmpty do
+    let count := mod._failedDeclarations.size
+    let noun := if count == 1 then "declaration failed" else "declarations failed"
+    throwErrorAt stx m!"Cannot finalize Veil module {mod.name}: {count} Veil {noun} to elaborate."
   let mod ← mod.ensureStateIsDefined
   throwIfNoInitializerDefined mod
   warnIfNoInvariantsDefined mod
@@ -466,11 +489,12 @@ def elabCheckAction : CommandElab := fun stx => do
 
 
 @[command_elab Veil.genState]
-def elabGenState : CommandElab := fun _stx => do
+def elabGenState : CommandElab := fun stx => do
   -- Use dynamic trace class name for detailed profiling
   withTraceNode `veil.perf.elaborator.genState (fun _ => return "#gen_state") do
     let mut mod ← getCurrentModule (errMsg := "You cannot #gen_state outside of a Veil module!")
     mod.throwIfStateAlreadyDefined ; mod.throwIfSpecAlreadyFinalized
+    markDeclarationPending mod stx
     mod ← mod.ensureStateIsDefined
     localEnv.modifyModule (fun _ => mod)
 
@@ -481,6 +505,7 @@ def elabInitializer : CommandElab := fun stx => do
     let mut mod ← getCurrentModule (errMsg := "You cannot elaborate an initializer outside of a Veil module!")
     mod ← mod.ensureStateIsDefined
     mod.throwIfSpecAlreadyFinalized
+    markDeclarationPending mod stx
     let new_mod ← match stx with
     | `(command|after_init {$l:doSeq}) => mod.defineProcedure (ProcedureInfo.initializer) .none .none l stx
     | _ => throwUnsupportedSyntax
@@ -494,6 +519,7 @@ def elabProcedure : CommandElab := fun stx => do
     let mut mod ← getCurrentModule (errMsg := "You cannot elaborate an action outside of a Veil module!")
     mod ← mod.ensureStateIsDefined
     mod.throwIfSpecAlreadyFinalized
+    markDeclarationPending mod stx
     let new_mod ← match stx with
     | `(command|action $nm:ident $br:explicitBinders ? {$l:doSeq}) => mod.defineProcedure (ProcedureInfo.action nm.getId) br .none l stx
     | `(command|procedure $nm:ident $br:explicitBinders ? {$l:doSeq}) => mod.defineProcedure (ProcedureInfo.procedure nm.getId) br .none l stx
@@ -508,6 +534,7 @@ def elabTransition : CommandElab := fun stx => do
     let mut mod ← getCurrentModule (errMsg := "You cannot elaborate a transition outside of a Veil module!")
     mod ← mod.ensureStateIsDefined
     mod.throwIfSpecAlreadyFinalized
+    markDeclarationPending mod stx
     let new_mod ← match stx with
     | `(command|transition $nm:ident $br:explicitBinders ? { $t:term }) =>
       -- check immutability of changed fields
@@ -544,6 +571,7 @@ def elabProcedureWithSpec : CommandElab := fun stx => do
     let mut mod ← getCurrentModule (errMsg := "You cannot elaborate an action outside of a Veil module!")
     mod ← mod.ensureStateIsDefined
     mod.throwIfSpecAlreadyFinalized
+    markDeclarationPending mod stx
     let new_mod ← match stx with
     | `(command|action $nm:ident $br:explicitBinders ? $spec:doSeq {$l:doSeq}) => mod.defineProcedure (ProcedureInfo.action nm.getId) br spec l stx
     | `(command|procedure $nm:ident $br:explicitBinders ? $spec:doSeq {$l:doSeq}) => mod.defineProcedure (ProcedureInfo.procedure nm.getId) br spec l stx
@@ -558,6 +586,7 @@ def elabGhostDefinition : CommandElab := fun stx => do
     let mut mod ← getCurrentModule (errMsg := "You cannot elaborate a ghost definition outside of a Veil module!")
     mod ← mod.ensureStateIsDefined
     mod.throwIfSpecAlreadyFinalized
+    markDeclarationPending mod stx
     let new_mod ← match stx with
     | `(command|$[theory%$forTheory]? ghost relation $nm:ident $br:explicitBinders ? := $t:term) =>
       mod.defineGhostDefinition nm.getId br t (justTheory := forTheory.isSome) (isRelation := true)
@@ -571,6 +600,7 @@ def elabAssertion : CommandElab := fun stx => do
   let mut mod ← getCurrentModule (errMsg := "You cannot declare an assertion outside of a Veil module!")
   mod ← mod.ensureStateIsDefined
   mod.throwIfSpecAlreadyFinalized
+  markDeclarationPending mod stx
   -- TODO: handle assertion sets correctly
   let assertion : StateAssertion ← match stx with
   | `(command|assumption $name:propertyName ? $prop:term) => mod.mkAssertion .assumption name prop stx
