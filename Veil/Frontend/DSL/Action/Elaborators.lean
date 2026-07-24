@@ -1007,6 +1007,23 @@ def Module.defineTransitionAbstractForNext (mod : Module) : TermElabM (Option Co
 private def withVeilModeVar (bi : BinderInfo) (k : Expr → TermElabM α) : TermElabM α :=
   Meta.withLocalDecl veilModeVar.getId bi (mkConst ``Mode) k
 
+/-- Reject procedure parameters that would be shadowed by the component
+binders inserted into every Veil action body. Without this check, a same-typed
+collision silently changes the program's meaning; a differently typed one
+only happens to fail later during term elaboration. -/
+private def Module.throwIfProcedureParameterShadowsComponent
+    (mod : Module) (procedureName : Name)
+    (br : Option (TSyntax ``Lean.explicitBinders)) : CommandElabM Unit := do
+  let some br := br | return
+  let componentNames := mod.signature.map (·.name)
+  let _ ← explicitBindersFlatMapM br fun bi _ => do
+    let id ← binderIdentToIdent bi
+    if componentNames.contains id.getId then
+      throwErrorAt id m!"Parameter '{id.getId}' of '{procedureName}' conflicts with a Veil \
+        state or theory component of the same name. Component binders are introduced inside \
+        procedure bodies and would shadow this parameter."
+    pure ()
+
 /-- Elaborate `body` under `br`, and obtain its extra parameters. -/
 def elabProcedureCore (vs : Array Expr) (pi : ProcedureInfo) (br : Option (TSyntax ``Lean.explicitBinders)) (body : Term) (addModeArg : Bool := true) : TermElabM (Array Parameter × Expr) := do
   let brs ← Option.stxArrMapM br toFunBinderArray
@@ -1098,6 +1115,7 @@ def Module.defineProcedureCore (mod : Module) (pi : ProcedureInfo)
     return mod
 
 def Module.defineProcedure (mod : Module) (pi : ProcedureInfo) (br : Option (TSyntax ``Lean.explicitBinders)) (spec : Option doSeq) (l : doSeq) (stx : Syntax) : CommandElabM Module := do
+  mod.throwIfProcedureParameterShadowsComponent pi.name br
   -- Obtain `extraParams` so we can register the action
   let actionBinders ← (← mod.declarationBaseParams (.procedure pi)).mapM (·.binder)
   let (extraParams, eDo) ← liftTermElabMWithBinders actionBinders $ fun vs => elabProcedureDoNotation vs pi br l
@@ -1108,6 +1126,7 @@ def Module.defineProcedure (mod : Module) (pi : ProcedureInfo) (br : Option (TSy
 based on its syntax, and `act.do`, `act` and `act.ext` will be defined
 using `Transition.toVeilM`. -/
 def Module.defineTransition (mod : Module) (pi : ProcedureInfo) (br : Option (TSyntax `Lean.explicitBinders)) (t : Term) (stx : Syntax) : CommandElabM Module := do
+  mod.throwIfProcedureParameterShadowsComponent pi.name br
   -- Obtain `extraParams` so we can register the action
   let actionBinders ← (← mod.declarationBaseParams (.procedure pi)).mapM (·.binder)
   let (extraParams, eTr) ← liftTermElabMWithBinders actionBinders $ fun vs => elabTransitionTerm vs pi br t
