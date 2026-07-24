@@ -126,17 +126,30 @@ to `true` during that compilation to:
 def isModelCheckCompileMode [Monad m] [MonadOptions m] : m Bool := do
   return veil.__modelCheckCompileMode.get (← getOptions)
 
-/-- Log an error, but only if not in model check compilation mode.
-    In compilation mode, errors would cause lake build to fail. -/
+/-- Report that a user-facing verification command was disabled by the internal
+model-checker compilation mode. Generated model-checker sources do not retain
+these commands, so seeing this warning indicates that the internal option was
+set in user source. -/
+def warnVerificationSkippedAt [Monad m] [MonadOptions m] [AddMessageContext m] [MonadLog m]
+    (stx : Syntax) (operation : String) : m Unit := do
+  logWarningAt stx m!"Skipping {operation} because `veil.__modelCheckCompileMode` is true. \
+    This option is reserved for generated model-checker sources and must not be set in user code."
+
+/-- Log an error normally. In model-check compilation mode, report it as a
+warning so generated binaries can still build without hiding the diagnostic. -/
 def veilLogError [Monad m] [MonadOptions m] [AddMessageContext m] [MonadLog m]
     (msg : MessageData) : m Unit := do
-  unless ← isModelCheckCompileMode do
+  if ← isModelCheckCompileMode then
+    logWarning m!"Suppressed error while compiling a generated model checker: {msg}"
+  else
     logError msg
 
-/-- Log an error at a specific syntax location, but only if not in compilation mode. -/
+/-- Location-aware variant of `veilLogError`. -/
 def veilLogErrorAt [Monad m] [MonadOptions m] [AddMessageContext m] [MonadLog m]
     (stx : Syntax) (msg : MessageData) : m Unit := do
-  unless ← isModelCheckCompileMode do
+  if ← isModelCheckCompileMode then
+    logWarningAt stx m!"Suppressed error while compiling a generated model checker: {msg}"
+  else
     logErrorAt stx msg
 
 end ModelCheckCompilationMode
