@@ -52,19 +52,22 @@ private def mkTraceDischargerResult [Monad m] [MonadEnv m] [MonadError m] [Monad
     (expectedName : Name) (numTransitions : Nat) (isExpectedSat : Bool)
     (ch : Std.CloseableChannel ((Name × Nat) × Smt.AsyncOutput))
     (time : Nat) (ex? : Option Exception := none) : m (DischargerResult SmtResult) := do
-  let outputs ← collectSmtOutputs ch expectedName
-  let result ← overallSmtResultForTrace numTransitions isExpectedSat outputs
-  match result with
-  | .none => match ex? with
-    | some ex =>
-      match ← unknownReasonFromException? ex with
-      | some reason => return .unknown (.some (.unknown #[reason])) time
-      | none => return .error #[(ex, s!"{← ex.toMessageData.toString}")] time
-    | none => return .proven none .none time
-  | .some (.error exs) => return .error exs time
-  | .some (.unknown _) => return .unknown result time
-  | .some r@(.sat _) | .some r@(.unsat _) =>
-    return if (r matches .sat _) == isExpectedSat then .proven none r time else .disproven r time
+  try
+    let outputs ← collectSmtOutputs ch expectedName
+    let result ← overallSmtResultForTrace numTransitions isExpectedSat outputs
+    match result with
+    | .none => match ex? with
+      | some ex =>
+        match ← unknownReasonFromException? ex with
+        | some reason => return .unknown (.some (.unknown #[reason])) time
+        | none => return .error #[(ex, s!"{← ex.toMessageData.toString}")] time
+      | none => return .proven none .none time
+    | .some (.error exs) => return .error exs time
+    | .some (.unknown _) => return .unknown result time
+    | .some r@(.sat _) | .some r@(.unsat _) =>
+      return if (r matches .sat _) == isExpectedSat then .proven none r time else .disproven r time
+  catch ex =>
+    return .error #[(ex, s!"Failed to process trace discharger output: {← ex.toMessageData.toString}")] time
 
 /-- Create a discharger for trace queries that doesn't require an external proof term.
 

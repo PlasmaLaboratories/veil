@@ -38,32 +38,40 @@ private def overallSmtResult [Monad m] [MonadEnv m] [MonadError m] [MonadLiftT B
         dbg_trace "Failed to build counterexample; exception: {← ex.toMessageData.toString}"
         return none)))
 
-/-- Create a DischargerResult from SMT outputs for inductive VCs. -/
+/-- Create a `DischargerResult` from SMT outputs for inductive VCs.
+
+Result processing must be total: this function runs inside an asynchronous
+worker whose caller is waiting on a promise. Letting an exception escape would
+drop the worker before it resolves that promise and leave the VC permanently
+in the `running` state. -/
 private def mkDischargerResult [Monad m] [MonadEnv m] [MonadError m] [MonadLiftT BaseIO m]
     [MonadLiftT (EIO Std.CloseableChannel.Error) m] [MonadLiftT MetaM m]
     (expectedName : Name) (actName : Name)
     (ch : Std.CloseableChannel ((Name × Nat) × Smt.AsyncOutput))
     (data : Witness ⊕ Exception) (time : Nat) : m (DischargerResult SmtResult) := do
-  let outputs ← collectSmtOutputs ch expectedName
-  let result ← overallSmtResult actName outputs
-  match result with
-  | .some result => match result with
-    | .error exs => return .error exs time
-    | .sat _ => return .disproven result time
-    | .unknown _ => return .unknown result time
-    | .unsat _ => do
+  try
+    let outputs ← collectSmtOutputs ch expectedName
+    let result ← overallSmtResult actName outputs
+    match result with
+    | .some result => match result with
+      | .error exs => return .error exs time
+      | .sat _ => return .disproven result time
+      | .unknown _ => return .unknown result time
+      | .unsat _ => do
+        match data with
+        | .inl witness => return .proven (some witness) result time
+        | .inr ex =>
+          let msg ← ex.toMessageData.toString
+          return .error #[(ex, s!"{msg}\nThe SMT solver reported unsat, but proof-term elaboration did not produce a witness.")] time
+    | .none =>
       match data with
-      | .inl witness => return .proven (some witness) result time
-      | _ =>
-        let s := "mkDischargerResult: overallSmtResult is unsat, but no witness provided"
-        dbg_trace s; throwError s
-  | .none =>
-    match data with
-    | .inl witness => return .proven (some witness) .none time
-    | .inr ex =>
-      match ← unknownReasonFromException? ex with
-      | some reason => return .unknown (.some (.unknown #[reason])) time
-      | none => return .error #[(ex, s!"{← ex.toMessageData.toString}")] time
+      | .inl witness => return .proven (some witness) .none time
+      | .inr ex =>
+        match ← unknownReasonFromException? ex with
+        | some reason => return .unknown (.some (.unknown #[reason])) time
+        | none => return .error #[(ex, s!"{← ex.toMessageData.toString}")] time
+  catch ex =>
+    return .error #[(ex, s!"Failed to process discharger output: {← ex.toMessageData.toString}")] time
 
 /-! ## VC Discharger -/
 
