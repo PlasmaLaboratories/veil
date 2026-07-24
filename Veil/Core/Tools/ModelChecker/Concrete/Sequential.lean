@@ -54,7 +54,11 @@ def SequentialSearchContext.processState
   (newFrontierDepth : Nat) :
   SequentialSearchContext σ κ σₕ asm :=
   let (ctx, sq) := sctx
-  let (ctx', outcomesOpt) := ctx.processState params th fpSt curr outcomes
+  let ctxAtDepth := { ctx with
+    completedDepth := newCompletedDepth
+    currentFrontierDepth := newFrontierDepth
+  }
+  let (ctx', outcomesOpt) := ctxAtDepth.processState params th fpSt curr outcomes
   match outcomesOpt with
   | none =>
     -- Early termination case: processState returned none, meaning we're terminating early
@@ -167,24 +171,26 @@ theorem SequentialSearchContext.bfsStep_preserves_invs
   rw [tmp] ; clear tmp
   -- now process the state
   dsimp [SequentialSearchContext.processState]
-  fun_cases BaseSearchContext.processState params th fpSt curr (sys.tr th curr) ctx
-  rename_i succs exns h_eq_part hasSuccessfulTransition completedDepth newViolations
+  fun_cases BaseSearchContext.processState params th fpSt curr (sys.tr th curr)
+    { ctx with completedDepth := newCompleteDepth, currentFrontierDepth := newFrontierDepth }
+  rename_i succs exns h_eq_part hasSuccessfulTransition completedDepth currentStateDepth newViolations
     earlyTermination h_eq_checkvio ctx' ctx''
-  subst completedDepth ; dsimp only
-  revert h_eq_checkvio ; fun_cases checkViolationsAndMaybeTerminate params th fpSt curr ctx.completedDepth hasSuccessfulTransition exns
+  subst completedDepth currentStateDepth
+  revert h_eq_checkvio ; fun_cases checkViolationsAndMaybeTerminate params th fpSt curr
+    newCompleteDepth newFrontierDepth hasSuccessfulTransition exns
   rename_i safetyViolations safetyViolation deadlock tmp1 tmp2
   intro htmp ; injection htmp with h_eq_newvio h_eq_earlyterm ; subst tmp1 tmp2
   -- see if early termination happened
   rcases earlyTermination with _ | earlyTermination
   on_goal 2=>
     -- early termination case
-    subst ctx' ctx'' ; dsimp
+    subst ctx' ctx''
     cases earlyTermination
     all_goals (try solve
       | dsimp
         constructor ; on_goal 1=> constructor
         all_goals dsimp only at * ; (try solve | assumption | grind))
-  subst ctx' ctx'' ; dsimp ; rw [h_not_finished]
+  subst ctx' ctx'' ; rw [h_not_finished]
   -- normal case, in transit
   apply SequentialSearchContextInvariants.finish_stateInTransit (curr := curr)
   · apply SequentialSearchContext.processSuccessors_preserves_invs
