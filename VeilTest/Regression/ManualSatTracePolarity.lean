@@ -20,7 +20,12 @@ invariant true
 
 #gen_spec
 
-/-- error: cannot translate Type -/
+sat trace [possible] {
+} (by
+  refine ⟨default, default, ?_⟩
+  veil_bmc)
+
+/-- error: unable to prove goal, either it is false or you need to provide more facts. Could not produce a counter-example. Try introducing variables into the local context to get a counter-example. -/
 #guard_msgs in
 sat trace [impossible] {
   assert False

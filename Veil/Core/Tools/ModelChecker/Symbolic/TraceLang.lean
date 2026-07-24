@@ -381,16 +381,29 @@ def elabTraceSpec (r : TSyntax `expected_smt_result) (name : Option (TSyntax `id
 
     let vcName ← match name with | some n => pure n.getId | none => mkFreshUserName `trace
     let conjunction ← repeatedAnd finalState.assertions
+    let moduleBinders ← collectModuleBinders mod
     let actionTagBinders ← if mod.actions.isEmpty then pure #[] else mkActionTagBinders
-    let allBinders := (← collectModuleBinders mod) ++ actionTagBinders ++ finalState.binders.all
-    let bracketedBinders := allBinders.map (·.1)
+    let vcBinders := moduleBinders ++ actionTagBinders ++ finalState.binders.all
+    let bracketedBinders := vcBinders.map (·.1)
     let stateNames := stateIds.toArray
     let vcAssertion ←
       `(∀ $[$bracketedBinders]* ($theoryId:ident : $theoryT) ($[$stateNames]* : $stateT), ¬ $conjunction)
     let manualAssertion ← if isExpectedSat then
-      let explicitBinders := allBinders.map (·.2)
+      -- The concrete ActionTag type and its generated enum instance are known
+      -- after `#gen_spec`; keep them out of the existential so manual goals do
+      -- not quantify over `Type`.
+      let explicitBinders := (moduleBinders ++ finalState.binders.all).map (·.2)
       let binderNames := stateNames.map identToBinderIdent
-      `(∃ $[$explicitBinders]* ($theoryId:ident : $theoryT) ($[$binderNames]* : $stateT), $conjunction)
+      let existential ←
+        `(∃ $[$explicitBinders]* ($theoryId:ident : $theoryT) ($[$binderNames]* : $stateT), $conjunction)
+      if mod.actions.isEmpty then
+        pure existential
+      else
+        let concreteActionTagType := Ident.toEnumConcreteType actionTagType
+        let actionTagEnumClass := Ident.toEnumClass actionTagType
+        `(let $actionTagType : Type := $concreteActionTagType
+          let $actionTagEnumInst : $actionTagEnumClass $actionTagType := $(mkIdent ``inferInstance)
+          $existential)
     else
       pure vcAssertion
 
