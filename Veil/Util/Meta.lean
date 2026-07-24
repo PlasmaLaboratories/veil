@@ -249,7 +249,15 @@ def elabVeilCommand (stx : Syntax) : CommandElabM Unit := do
   -- Use dynamic trace class name so each command appears separately in the profiler
   withTraceNode traceClass (fun _ => return displayName) do
     trace[veil.desugar] "{stx}"
+    let messageCountBefore := (← get).messages.reportedPlusUnreported.size
     elabCommand stx
+    -- `elabCommand` logs elaboration exceptions instead of propagating them.
+    -- Detect errors added by this nested command so callers do not continue
+    -- installing or finalizing partially generated declarations.
+    let messagesAfter := (← get).messages.reportedPlusUnreported
+    let newMessages := messagesAfter.toArray.extract messageCountBefore messagesAfter.size
+    if newMessages.any fun msg => msg.severity matches .error then
+      throwAbortCommand
 
 /-- Is this type a `Decidable` instance? -/
 def isDecidableInstance (type : Expr) : TermElabM Bool := do
