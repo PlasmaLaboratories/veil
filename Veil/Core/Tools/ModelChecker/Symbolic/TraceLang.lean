@@ -34,13 +34,11 @@ import Veil.Frontend.DSL.Module.Elaborators
     any 6 actions
     assert ¬ (leader L → le N L)
   }
-
-  -- Manual: generates a theorem for debugging
-  sat trace [debug_trace] {
-    send
-    recv
-  } by { bmc_sat }
   ```
+
+  A proof term supplied on the same line as the closing brace generates a
+  theorem for manual debugging. For `sat`, the theorem requires an existential
+  trace witness; for `unsat`, it requires a proof that no such trace exists.
 -/
 
 declare_syntax_cat expected_smt_result
@@ -363,7 +361,7 @@ def elabTraceSpec (r : TSyntax `expected_smt_result) (name : Option (TSyntax `id
   let isExpectedSat := r.raw.isOfKind ``expected_sat
 
   -- Build the trace specification
-  let (assertion, numTransitions, vcName) ← Command.runTermElabM fun _ => do
+  let (vcAssertion, manualAssertion, numTransitions, vcName) ← Command.runTermElabM fun _ => do
     let expandedSpec := (← parseTraceSpec spec).flatMap expandTraceLine
     let numTransitions := expandedSpec.filter (!· matches .assertion _) |>.length
     let stateIds := (List.range (numTransitions + 1)).map fun i => mkIdent (Name.mkSimple s!"st{i}")
@@ -383,29 +381,43 @@ def elabTraceSpec (r : TSyntax `expected_smt_result) (name : Option (TSyntax `id
 
     let vcName ← match name with | some n => pure n.getId | none => mkFreshUserName `trace
     let conjunction ← repeatedAnd finalState.assertions
+    let moduleBinders ← collectModuleBinders mod
     let actionTagBinders ← if mod.actions.isEmpty then pure #[] else mkActionTagBinders
-    let allBinders := (← collectModuleBinders mod) ++ actionTagBinders ++ finalState.binders.all
-    let bracketedBinders := allBinders.map (·.1)
+    let vcBinders := moduleBinders ++ actionTagBinders ++ finalState.binders.all
+    let bracketedBinders := vcBinders.map (·.1)
     let stateNames := stateIds.toArray
-    -- let explicitBinders := allBinders.map (·.2)
-    -- let binderNames := stateNames.map identToBinderIdent
-
-    let assertion ← --if r.raw.isOfKind ``expected_unsat then
+    let vcAssertion ←
       `(∀ $[$bracketedBinders]* ($theoryId:ident : $theoryT) ($[$stateNames]* : $stateT), ¬ $conjunction)
-    -- else
-      -- `(∃ $[$explicitBinders]* ($theoryId:ident : $theoryT) ($[$binderNames]* : $stateT), $conjunction)
+    let manualAssertion ← if isExpectedSat then
+      -- The concrete ActionTag type and its generated enum instance are known
+      -- after `#gen_spec`; keep them out of the existential so manual goals do
+      -- not quantify over `Type`.
+      let explicitBinders := (moduleBinders ++ finalState.binders.all).map (·.2)
+      let binderNames := stateNames.map identToBinderIdent
+      let existential ←
+        `(∃ $[$explicitBinders]* ($theoryId:ident : $theoryT) ($[$binderNames]* : $stateT), $conjunction)
+      if mod.actions.isEmpty then
+        pure existential
+      else
+        let concreteActionTagType := Ident.toEnumConcreteType actionTagType
+        let actionTagEnumClass := Ident.toEnumClass actionTagType
+        `(let $actionTagType : Type := $concreteActionTagType
+          let $actionTagEnumInst : $actionTagEnumClass $actionTagType := $(mkIdent ``inferInstance)
+          $existential)
+    else
+      pure vcAssertion
 
-    return (assertion, numTransitions, vcName)
+    return (vcAssertion, manualAssertion, numTransitions, vcName)
 
   match pf with
   | some proofTerm =>
     -- Generate a theorem for manual debugging
     let thmName := mkIdent vcName
-    elabCommand (← `(theorem $thmName : $assertion := $proofTerm))
+    elabCommand (← `(theorem $thmName : $manualAssertion := $proofTerm))
   | none =>
     -- Use VCManager with automatic discharger
-    let vcStatement ← mkTraceVCStatement mod vcName assertion
-    let metadata := mkTraceVCMetadata isExpectedSat numTransitions (some vcName) (some assertion)
+    let vcStatement ← mkTraceVCStatement mod vcName vcAssertion
+    let metadata := mkTraceVCMetadata isExpectedSat numTransitions (some vcName) (some vcAssertion)
     -- Filter for matching trace VCs
     let vcFilter := (· == metadata)
     -- Check if a VC with this name already exists (avoid duplicate work)
