@@ -234,19 +234,28 @@ partial def expandDoElemVeil (proc : Name) (stx : doSeqItem) : TermElabM (Array 
   | `(Term.doSeqItem| return $t:term)
   -- NOTE: all the expressions in `require`, `assert`, and `assume`,
   -- `pick-such-that` and `if` need to be `Decidable` for execution.
-  | `(Term.doSeqItem| assume $t)
   | `(Term.doSeqItem| let $_ :| $t)
   | `(Term.doSeqItem| let $_ : $_ ← pick $_) | `(Term.doSeqItem| let $_ : $_ ← pick)
   | `(Term.doSeqItem| let $_ ← pick $_) | `(Term.doSeqItem| let $_ ← pick)
   => return #[stx]
+  | `(Term.doSeqItem| assume $t) =>
+    if stmtRunsComputation t then
+      return #[stx] ++ (← getState mod)
+    return #[stx]
   -- We elaborate `require` and `assert` here, since we need to record
   -- which procedure they belong to
   | `(Term.doSeqItem| require $t) =>
     let assertId ← mkNewAssertion proc stx
-    return #[← `(Term.doSeqItem| $(mkIdent ``VeilM.require):ident $t $(Syntax.mkNatLit assertId.toNat))]
+    let stmt ← `(Term.doSeqItem| $(mkIdent ``VeilM.require):ident $t $(Syntax.mkNatLit assertId.toNat))
+    if stmtRunsComputation t then
+      return #[stmt] ++ (← getState mod)
+    return #[stmt]
   | `(Term.doSeqItem| assert $t) =>
     let assertId ← mkNewAssertion proc stx
-    return #[← `(Term.doSeqItem| $(mkIdent ``VeilM.assert):ident $t $(Syntax.mkNatLit assertId.toNat))]
+    let stmt ← `(Term.doSeqItem| $(mkIdent ``VeilM.assert):ident $t $(Syntax.mkNatLit assertId.toNat))
+    if stmtRunsComputation t then
+      return #[stmt] ++ (← getState mod)
+    return #[stmt]
   -- Conditional boolean statements (`if`)
   | `(Term.doSeqItem| if $t:term then $thn:doSeq $[else if $ts:term then $elifs:doSeq]* $[else $e?:doSeq]?) =>
     let mkIfWithRefresh (c : Term) (thn els : Array doSeqItem) : TermElabM doSeqItem := do
