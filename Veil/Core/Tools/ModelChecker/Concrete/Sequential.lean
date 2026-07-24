@@ -173,11 +173,11 @@ theorem SequentialSearchContext.bfsStep_preserves_invs
   dsimp [SequentialSearchContext.processState]
   fun_cases BaseSearchContext.processState params th fpSt curr (sys.tr th curr)
     { ctx with completedDepth := newCompleteDepth, currentFrontierDepth := newFrontierDepth }
-  rename_i succs exns h_eq_part hasSuccessfulTransition completedDepth newViolations
+  rename_i succs exns h_eq_part hasSuccessfulTransition completedDepth currentStateDepth newViolations
     earlyTermination h_eq_checkvio ctx' ctx''
-  subst completedDepth
+  subst completedDepth currentStateDepth
   revert h_eq_checkvio ; fun_cases checkViolationsAndMaybeTerminate params th fpSt curr
-    newCompleteDepth hasSuccessfulTransition exns
+    newCompleteDepth newFrontierDepth hasSuccessfulTransition exns
   rename_i safetyViolations safetyViolation deadlock tmp1 tmp2
   intro htmp ; injection htmp with h_eq_newvio h_eq_earlyterm ; subst tmp1 tmp2
   -- see if early termination happened

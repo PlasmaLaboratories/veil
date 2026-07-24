@@ -14,13 +14,14 @@ def MapReduceSearchContextMain.initial (initStates : List σ) (numShards : Nat)
     tovisit := tovisit,
     globalSeen := ShardedTreeSetUSize.ofListFastByHash fps numShards h_pos h_small }
 
-/-- Create an empty local context with the given `completedDepth`. -/
-def MapReduceSearchContextLocal.initial (completedDepth : Nat) : MapReduceSearchContextLocal σ κ σₕ asm :=
+/-- Create an empty local context for the frontier currently being processed. -/
+def MapReduceSearchContextLocal.initial
+    (completedDepth currentFrontierDepth : Nat) : MapReduceSearchContextLocal σ κ σₕ asm :=
   ({ log := Std.HashMap.emptyWithCapacity,
      violatingStates := [],
      finished := none,
      completedDepth := completedDepth,
-     currentFrontierDepth := completedDepth + 1,
+     currentFrontierDepth := currentFrontierDepth,
      statesFound := 0,
      actionStatsMap := ActionStatUpdate.empty (κ := κ) }, [])
 
@@ -36,9 +37,9 @@ theorem MapReduceSearchContextMainInvariants.initial [Std.TransOrd σₕ] [Std.L
 theorem MapReduceSearchContextLocalInvariants.initial
   (sys : EnumerableTransitionSystem ρ (List ρ) σ (List σ) Int κ (List (κ × ExecutionOutcome Int σ)) th)
   (params : SearchParameters ρ σ)
-  (globalSeen : ShardedTreeSetUSize σₕ) (completedDepth : Nat) :
+  (globalSeen : ShardedTreeSetUSize σₕ) (completedDepth currentFrontierDepth : Nat) :
   MapReduceSearchContextLocalInvariants sys params globalSeen (fun _ => False)
-    (MapReduceSearchContextLocal.initial (fp := fp) completedDepth) := by
+    (MapReduceSearchContextLocal.initial (fp := fp) completedDepth currentFrontierDepth) := by
   simp [MapReduceSearchContextLocal.initial]
   constructor ; on_goal 1=> constructor
   all_goals (try solve | intros ; grind)

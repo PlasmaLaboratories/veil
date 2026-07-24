@@ -137,10 +137,11 @@ theorem MapReduceSearchContextLocalInvariants.processState_progress
 
   dsimp [MapReduceSearchContextLocal.processState]
   fun_cases BaseSearchContext.processState params th fpSt curr (sys.tr th curr) ctx
-  rename_i succs exns h_eq_part hasSuccessfulTransition completedDepth newViolations
+  rename_i succs exns h_eq_part hasSuccessfulTransition completedDepth currentStateDepth newViolations
     earlyTermination h_eq_checkvio ctx' ctx''
-  subst completedDepth ; dsimp only
-  revert h_eq_checkvio ; fun_cases checkViolationsAndMaybeTerminate params th fpSt curr ctx.completedDepth hasSuccessfulTransition exns
+  subst completedDepth currentStateDepth ; dsimp only
+  revert h_eq_checkvio ; fun_cases checkViolationsAndMaybeTerminate params th fpSt curr
+    ctx.completedDepth ctx.currentFrontierDepth hasSuccessfulTransition exns
   rename_i safetyViolations safetyViolation deadlock tmp1 tmp2
   intro htmp ; injection htmp with h_eq_newvio h_eq_earlyterm ; subst tmp1 tmp2
   -- see if early termination happened
@@ -234,11 +235,13 @@ def bfsBigStep
   (sys : EnumerableTransitionSystem ρ (List ρ) σ (List σ) ℤ κ (List (κ × ExecutionOutcome ℤ σ)) th)
   (globalSeen : ShardedTreeSetUSize σₕ)
   (completedDepth : Nat)
+  (currentFrontierDepth : Nat)
   (queue : List (MapReduceQueueItem σₕ σ))
   (h_inqueue_reachable : ∀ item ∈ queue, sys.reachable item.state) :
   m (LawfulMapReduceSearchContextLocal (κ := κ) sys params globalSeen (· ∈ queue)) :=
   let lctx : LawfulMapReduceSearchContextLocal sys params globalSeen (fun _ => False) :=
-    ⟨MapReduceSearchContextLocal.initial completedDepth, MapReduceSearchContextLocalInvariants.initial sys params globalSeen completedDepth⟩
+    ⟨MapReduceSearchContextLocal.initial completedDepth currentFrontierDepth,
+      MapReduceSearchContextLocalInvariants.initial sys params globalSeen completedDepth currentFrontierDepth⟩
   let res := lctx.processWorkQueue queue processWorkQueue.subproof6 h_inqueue_reachable
   pure res
 
@@ -575,12 +578,14 @@ def breadthFirstSearchParallel {m : Type → Type}
         let numLarge := tovisitLen % numSplits
         let splitLists := ListSplit.splitList numSplits chunkSize numLarge tovisit
         let completedDepth := base.completedDepth
+        let currentFrontierDepth := base.currentFrontierDepth
         -- Map step: spawn parallel tasks
         -- **CAVEAT**: The call to `IO.asTask` **SHOULD NOT** be put in this procedure,
         -- as that might cause parallelism to vanish!!! Instead, the call should be defined
         -- in some other file.
         let tasks ← IteratedProd.taskSplit splitLists fun subList h_sublist_in =>
-          LawfulMapReduceSearchContextLocal.bfsBigStep params sys globalSeen completedDepth subList
+          LawfulMapReduceSearchContextLocal.bfsBigStep params sys globalSeen completedDepth
+            currentFrontierDepth subList
             (breadthFirstSearchParallel.subproof1 h_mctx.queue_sound splitLists
               (fun item hm => (ListSplit.splitList_mem_iff numSplits chunkSize numLarge tovisit item).mp hm) _ h_sublist_in)
         let results ← IteratedProd.mapM

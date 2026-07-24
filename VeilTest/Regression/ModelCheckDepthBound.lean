@@ -36,8 +36,30 @@ private def checkDepthBound
   | _, _ =>
     throw <| IO.userError s!"unexpected model-checking result: {repr result}"
 
+private def initialViolationParameters : SearchParameters Unit Nat := {
+  invariants := [{ name := `initialIsPositive, property := fun _ st => st > 0 }]
+  earlyTerminationConditions := [
+    .foundViolatingState,
+    .assertionFailed,
+    .deadlockOccurred,
+    .reachedDepthBound 0
+  ]
+}
+
+private def checkInitialViolation (parallelCfg : Option ParallelConfig) : IO Unit := do
+  let token ← IO.CancelToken.new
+  let result ← findReachable (asm := ActionStatsMap Nat)
+    chainSystem initialViolationParameters parallelCfg 999999 token
+  match result with
+  | .foundViolation _ (.safetyFailure [`initialIsPositive]) (some trace) =>
+    unless trace.steps.isEmpty do
+      throw <| IO.userError s!"initial-state violation trace has {trace.steps.size} steps, expected 0"
+  | _ =>
+    throw <| IO.userError s!"expected a depth-0 initial-state violation, got: {repr result}"
+
 #eval checkDepthBound none 3 false
 #eval checkDepthBound none 4 true
+#eval checkInitialViolation none
 
 private def parallelConfig : ParallelConfig := {
   numSubTasks := 2
@@ -47,3 +69,4 @@ private def parallelConfig : ParallelConfig := {
 
 #eval checkDepthBound (some parallelConfig) 3 false
 #eval checkDepthBound (some parallelConfig) 4 true
+#eval checkInitialViolation (some parallelConfig)

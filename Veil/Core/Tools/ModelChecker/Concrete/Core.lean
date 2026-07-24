@@ -217,19 +217,20 @@ theorem partitionExecutionOutcome.fst_spec {κ σ : Type} (outcomes : List (κ �
 -- `specialize` of `List.filterMap` may not exhibit
 def checkViolationsAndMaybeTerminate
   (completedDepth : Nat)
+  (currentStateDepth : Nat)
   (hasSuccessfulTransition : Bool)
   (assertionFailures : List (Int × σ)) :
   List (σₕ × ViolationKind) × Option (EarlyTerminationReason σₕ) :=
-  let reachedDepthBound := params.earlyTerminationConditions.any fun
-    | .reachedDepthBound bound => completedDepth >= bound
+  let outsideDepthBound := params.earlyTerminationConditions.any fun
+    | .reachedDepthBound bound => currentStateDepth > bound
     | _ => false
   -- Compute all violation conditions once
-  let safetyViolations := if reachedDepthBound then [] else
+  let safetyViolations := if outsideDepthBound then [] else
     params.invariants.filterMap fun p =>
       if !p.holdsOn th curr then some p.name else none
   let safetyViolation := !safetyViolations.isEmpty
-  let deadlock := !reachedDepthBound && !hasSuccessfulTransition && !params.terminating.holdsOn th curr
-  let assertionFailures := if reachedDepthBound then [] else assertionFailures
+  let deadlock := !outsideDepthBound && !hasSuccessfulTransition && !params.terminating.holdsOn th curr
+  let assertionFailures := if outsideDepthBound then [] else assertionFailures
 
   -- Collect all violations to add in a single list
   let newViolations : List (σₕ × ViolationKind) :=
@@ -254,8 +255,10 @@ def BaseSearchContext.processState
   let (successfulTransitions, assertionFailures) := partitionExecutionOutcome outcomes
   let hasSuccessfulTransition := !successfulTransitions.isEmpty
   let completedDepth := ctx.completedDepth
+  let currentStateDepth := ctx.currentFrontierDepth
   let (newViolations, earlyTermination) :=
-    checkViolationsAndMaybeTerminate params th fpSt curr completedDepth hasSuccessfulTransition assertionFailures
+    checkViolationsAndMaybeTerminate params th fpSt curr completedDepth currentStateDepth
+      hasSuccessfulTransition assertionFailures
   let ctx := {ctx with violatingStates := newViolations ++ ctx.violatingStates}
   -- Check for violations, record them, and determine if we should terminate early
   let ctx := match earlyTermination with
