@@ -1315,7 +1315,11 @@ private def Module.getStatementForTemporalTheorems [Monad m] [MonadError m] [Mon
   let thBinder ← `(bracketedBinder| ($thId : $environmentTheory))
   -- Construct the behavior predicate directly using Init and Next
   -- (avoiding relationalTransitionSystem which restricts ρ/σ to concrete types)
-  -- behavior = ⌜ Init th ⌝ ∧ □ ⟨ NextStep th ⟩ ∧ □ ⌜ Invariants th ⌝
+  -- behavior = ⌜ Init th ⌝ ∧ □ ⟨ NextStep th ⟩
+  --
+  -- Invariants are deliberately not included as assumptions here. A temporal
+  -- theorem must hold for every generated behavior; users may only rely on an
+  -- invariant after separately deriving its always-property from Init/Next.
   -- Get the module-level args for Init and NextStep
   let initRef ← do
     let ((_, initModArgs), _) ← mod.declarationSplitBindersArgs assembledInitName
@@ -1325,12 +1329,7 @@ private def Module.getStatementForTemporalTheorems [Monad m] [MonadError m] [Mon
     let ((_, nextStepModArgs), _) ← mod.declarationSplitBindersArgs assembledNextStepName
       (mod._derivedDefinitions[assembledNextStepName]!.declarationKind)
     `(@$assembledNextStep $nextStepModArgs* $thId)
-  -- Also include □⌜Invariants⌝ so the user can use safety invariants in liveness proofs
-  let invRef ← do
-    let ((_, invModArgs), _) ← mod.declarationSplitBindersArgs assembledInvariantsName
-      (mod._derivedDefinitions[assembledInvariantsName]!.declarationKind)
-    `(@$assembledInvariants $invModArgs* $thId)
-  let behavior ← `([tlafml| ⌜ $initRef ⌝ ∧ □ ⟨ $nextStepRef ⟩ ∧ □ ⌜ $invRef ⌝ ])
+  let behavior ← `([tlafml| ⌜ $initRef ⌝ ∧ □ ⟨ $nextStepRef ⟩ ])
   let hassBinder ← do
     let hassId := mkIdent `hass
     -- Assumptions also has module params; pass them explicitly
