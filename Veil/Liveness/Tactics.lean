@@ -143,11 +143,13 @@ syntax (name := unveil_temporal) "unveil_temporal" : tactic
 /-- Solve a temporal proof obligation by unveiling it, then running FOL-ization and `veil_solve`. -/
 syntax (name := veil_solve_temporal) "veil_solve_temporal" : tactic
 
-/-! ## Step 1: Dropping conjuncts from the behavior
+/-! ## Step 1: Dropping selected proof-mode hypotheses
 
 These run inside Lentil's proof mode (the goal is an `Entails` sequent).
-They find the proof-mode hypothesis whose pred contains `Init` /
-`Invariants` and clear it with `tclear`. Self-skip if no match. -/
+They find proof-mode hypotheses containing selected module predicates and
+clear them with `tclear`. Generated temporal theorem behavior contributes
+`Init` and `NextStep`; an `Invariants` hypothesis can appear only when a user
+has supplied it separately. Self-skip if no match. -/
 
 private def keepHypsByContainingConsts (consts : List Name) : DesugarTacticM Unit :=
   veilWithMainContext do

@@ -37,13 +37,14 @@ prove_temporal_by [top]
 
 temporal [impossible] □ ⌜ fun _ => False ⌝
 
-/-- error: tstart expected 2 names, but got 3 -/
+/-- info: ∀ {ρ σ : Type} {χ : State.Label → Type}
+  [χ_rep : (__veil_f : State.Label) → FieldRepresentation __veil_f.toDomain __veil_f.toCodomain (χ __veil_f)]
+  [χ_rep_lawful :
+    ∀ (__veil_f : State.Label),
+      LawfulFieldRepresentation __veil_f.toDomain __veil_f.toCodomain (χ __veil_f) (χ_rep __veil_f)]
+  [σ_sub : IsSubStateOf (State χ) σ] [ρ_sub : IsSubReaderOf Theory ρ] [σ_inhabited : Inhabited σ] (th : ρ),
+  veil_term% Assumptions → (⌜ veil_term% Init ⌝ ∧ □⟨ veil_term% NextStep ⟩) |-tla- (veil_term% impossible) : Prop -/
 #guard_msgs in
-prove_temporal_by [impossible]
-  tstart hInit hNext hInv
-  tclear hInit hNext
-  tdsimp only [impossible]
-  tmonotone
-  unveil_temporal
+#check temporal_theorem_body_of% impossible
 
 end TemporalInvariantContract

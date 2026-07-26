@@ -1313,13 +1313,15 @@ private def Module.getStatementForTemporalTheorems [Monad m] [MonadError m] [Mon
   -- Build the syntax of the theorem
   let thId := mkIdent `th
   let thBinder ← `(bracketedBinder| ($thId : $environmentTheory))
-  -- Construct the behavior predicate directly using Init and Next
-  -- (avoiding relationalTransitionSystem which restricts ρ/σ to concrete types)
-  -- behavior = ⌜ Init th ⌝ ∧ □ ⟨ NextStep th ⟩
-  --
   -- Invariants are deliberately not included as assumptions here. A temporal
-  -- theorem must hold for every generated behavior; users may only rely on an
-  -- invariant after separately deriving its always-property from Init/Next.
+  -- theorem must hold for every generated behavior. Veil does not currently
+  -- generate a reusable temporal always-property from a checked safety
+  -- invariant, so invariant-dependent liveness proofs are not yet supported by
+  -- this interface.
+  --
+  -- Construct the behavior predicate directly using Init and Next
+  -- (avoiding relationalTransitionSystem which restricts ρ/σ to concrete types):
+  -- behavior = ⌜ Init th ⌝ ∧ □ ⟨ NextStep th ⟩
   -- Get the module-level args for Init and NextStep
   let initRef ← do
     let ((_, initModArgs), _) ← mod.declarationSplitBindersArgs assembledInitName
