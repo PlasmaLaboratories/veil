@@ -44,9 +44,8 @@ set_option veil.smt.trust false
 temporal [success] 𝒲ℱ choose → ◇ ⌜ someChosen ⌝
 
 prove_temporal_by [success]
-  -- Name each of the three conjuncts: ⌜ Init ⌝, □⟨ NextStep ⟩ and □⌜ Invariants ⌝
-  tstart hInit hNext hInv
-  tclear hInv             -- the agreement invariant is not needed for this proof
+  -- Name the generated-behavior conjuncts: ⌜ Init ⌝ and □⟨ NextStep ⟩
+  tstart hInit hNext
   tdsimp only [success]   -- unfold `success`
   tintro hwf              -- introduce hwf : weak fairness of `choose` to the
                           -- temporal proof context

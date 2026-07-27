@@ -121,8 +121,6 @@ liveness proof pipeline follows these steps:
 
 Internal sub-tactics use `__` prefix. -/
 
-syntax "__liveness_drop_init" : tactic
-syntax "__liveness_drop_invariants" : tactic
 syntax "__liveness_reduce_to_safety" : tactic
 syntax "__liveness_narrow_localrprop" : tactic
 -- syntax "__liveness_narrow_next" : tactic
@@ -143,30 +141,7 @@ syntax (name := unveil_temporal) "unveil_temporal" : tactic
 /-- Solve a temporal proof obligation by unveiling it, then running FOL-ization and `veil_solve`. -/
 syntax (name := veil_solve_temporal) "veil_solve_temporal" : tactic
 
-/-! ## Step 1: Dropping conjuncts from the behavior
-
-These run inside Lentil's proof mode (the goal is an `Entails` sequent).
-They find the proof-mode hypothesis whose pred contains `Init` /
-`Invariants` and clear it with `tclear`. Self-skip if no match. -/
-
-private def keepHypsByContainingConsts (consts : List Name) : DesugarTacticM Unit :=
-  veilWithMainContext do
-    let names ← findTemporalHypsContaining consts
-    unless names.isEmpty do
-      let idents := names.toArray.map (fun n => Lean.mkIdent (Lean.Name.mkSimple n))
-      veilEvalTactic (← `(tactic| tclear *- $[$idents:ident]*))
-
-/-
-/-- Drop the proof-mode hypothesis containing `Init` (typically `⌜Init⌝`). -/
-def elabLivenessDropInit : DesugarTacticM Unit :=
-  dropHypsByContainingConsts [assembledInitName]
-
-/-- Drop the proof-mode hypothesis containing `Invariants` (typically `□⌜Invariants⌝`). -/
-def elabLivenessDropInvariants : DesugarTacticM Unit :=
-  dropHypsByContainingConsts [assembledInvariantsName]
--/
-
-/-! ## Step 1b: Reduce to safety fragment -/
+/-! ## Step 1: Reduce to safety fragment -/
 
 /-- Introduce finite-window premises, repeatedly split conjunction goals, and
     introduce any implication premises exposed by those splits. This lets later
@@ -377,8 +352,6 @@ def elabVeilSolveTemporal : DesugarTacticM Unit := do
     veilEvalTactic (← `(tacticSeq| veil_fol ! ; veil_solve ))
 
 elab_rules : tactic
-  -- | `(tactic| __liveness_drop_init%$tk) => elabLivenessDropInit.runByOption tk
-  -- | `(tactic| __liveness_drop_invariants%$tk) => elabLivenessDropInvariants.runByOption tk
   | `(tactic| __liveness_reduce_to_safety%$tk) => elabLivenessReduceToSafety.runByOption tk
   | `(tactic| __liveness_narrow_localrprop%$tk) => elabLivenessNarrowLocalRProp.runByOption tk
   -- | `(tactic| __liveness_narrow_next%$tk) => elabLivenessNarrowNext.runByOption tk

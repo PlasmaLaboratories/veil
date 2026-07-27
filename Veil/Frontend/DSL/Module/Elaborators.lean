@@ -1313,9 +1313,15 @@ private def Module.getStatementForTemporalTheorems [Monad m] [MonadError m] [Mon
   -- Build the syntax of the theorem
   let thId := mkIdent `th
   let thBinder ← `(bracketedBinder| ($thId : $environmentTheory))
+  -- Invariants are deliberately not included as assumptions here. A temporal
+  -- theorem must hold for every generated behavior. Veil does not currently
+  -- generate a reusable temporal always-property from a checked safety
+  -- invariant, so invariant-dependent liveness proofs are not yet supported by
+  -- this interface.
+  --
   -- Construct the behavior predicate directly using Init and Next
-  -- (avoiding relationalTransitionSystem which restricts ρ/σ to concrete types)
-  -- behavior = ⌜ Init th ⌝ ∧ □ ⟨ NextStep th ⟩ ∧ □ ⌜ Invariants th ⌝
+  -- (avoiding relationalTransitionSystem which restricts ρ/σ to concrete types):
+  -- behavior = ⌜ Init th ⌝ ∧ □ ⟨ NextStep th ⟩
   -- Get the module-level args for Init and NextStep
   let initRef ← do
     let ((_, initModArgs), _) ← mod.declarationSplitBindersArgs assembledInitName
@@ -1325,12 +1331,7 @@ private def Module.getStatementForTemporalTheorems [Monad m] [MonadError m] [Mon
     let ((_, nextStepModArgs), _) ← mod.declarationSplitBindersArgs assembledNextStepName
       (mod._derivedDefinitions[assembledNextStepName]!.declarationKind)
     `(@$assembledNextStep $nextStepModArgs* $thId)
-  -- Also include □⌜Invariants⌝ so the user can use safety invariants in liveness proofs
-  let invRef ← do
-    let ((_, invModArgs), _) ← mod.declarationSplitBindersArgs assembledInvariantsName
-      (mod._derivedDefinitions[assembledInvariantsName]!.declarationKind)
-    `(@$assembledInvariants $invModArgs* $thId)
-  let behavior ← `([tlafml| ⌜ $initRef ⌝ ∧ □ ⟨ $nextStepRef ⟩ ∧ □ ⌜ $invRef ⌝ ])
+  let behavior ← `([tlafml| ⌜ $initRef ⌝ ∧ □ ⟨ $nextStepRef ⟩ ])
   let hassBinder ← do
     let hassId := mkIdent `hass
     -- Assumptions also has module params; pass them explicitly
