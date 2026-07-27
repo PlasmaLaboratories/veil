@@ -65,6 +65,13 @@ theorem Bool.decide_eq_bool_eq {p : Prop} [dec : Decidable p] :
 theorem Bool.decide_eq_bool_eq' {p : Prop} [dec : Decidable p] :
   (@decide p dec = b) = ((b = true) = p) := by grind
 
+@[smtSimp low]
+theorem Bool.ite_decide_eq_bool_eq {c p : Prop} [Decidable c] [dec : Decidable p]
+    (b b' : Bool) :
+    ((if c then @decide p dec else b) = b') =
+      ((c → ((b' = true) = p)) ∧ (¬c → b = b')) := by
+  by_cases h : c <;> simp [h, Bool.decide_eq_bool_eq']
+
 attribute [smtSimp] exists_prop forall_const
 attribute [smtSimp] decide_eq_true_eq decide_eq_false_iff_not
 attribute [smtSimp] Veil.letEq_to_forall Veil.eqWithoutSubst
