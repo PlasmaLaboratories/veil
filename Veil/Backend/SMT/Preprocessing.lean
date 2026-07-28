@@ -77,6 +77,33 @@ theorem Bool.ite_decide_eq_bool_eq {c p : Prop} [Decidable c] [dec : Decidable p
       ((c → ((b' = true) = p)) ∧ (¬c → b = b')) := by
   by_cases h : c <;> simp [h, Bool.decide_eq_bool_eq']
 
+/--
+Twin of `Bool.ite_decide_eq_bool_eq` for the mirrored equation orientation,
+matching the `decide_eq_bool_eq`/`decide_eq_bool_eq'` pairing.
+-/
+@[smtSimp low]
+theorem Bool.ite_decide_eq_bool_eq' {c p : Prop} [Decidable c] [dec : Decidable p]
+    (b b' : Bool) :
+    (b' = (if c then @decide p dec else b)) =
+      ((c → ((b' = true) = p)) ∧ (¬c → b' = b)) := by
+  by_cases h : c <;> simp [h, Bool.decide_eq_bool_eq]
+
+/-- Same elimination when the conditional `decide` sits in the else branch. -/
+@[smtSimp low]
+theorem Bool.ite_else_decide_eq_bool_eq {c p : Prop} [Decidable c] [dec : Decidable p]
+    (b b' : Bool) :
+    ((if c then b else @decide p dec) = b') =
+      ((c → b = b') ∧ (¬c → ((b' = true) = p))) := by
+  by_cases h : c <;> simp [h, Bool.decide_eq_bool_eq']
+
+/-- Twin of `Bool.ite_else_decide_eq_bool_eq` for the mirrored equation orientation. -/
+@[smtSimp low]
+theorem Bool.ite_else_decide_eq_bool_eq' {c p : Prop} [Decidable c] [dec : Decidable p]
+    (b b' : Bool) :
+    (b' = (if c then b else @decide p dec)) =
+      ((c → b' = b) ∧ (¬c → ((b' = true) = p))) := by
+  by_cases h : c <;> simp [h, Bool.decide_eq_bool_eq]
+
 attribute [smtSimp] exists_prop forall_const
 attribute [smtSimp] decide_eq_true_eq decide_eq_false_iff_not
 attribute [smtSimp] Veil.letEq_to_forall Veil.eqWithoutSubst

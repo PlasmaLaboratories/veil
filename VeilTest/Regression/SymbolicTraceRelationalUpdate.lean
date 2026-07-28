@@ -56,3 +56,39 @@ example (α : Type) [DecidableEq α] (b p : α)
     next b p = true := by
   veil_simp only [smtSimp] at h
   veil_smt
+
+-- Mirrored equation orientation: the updated function on the right-hand side.
+set_option warningAsError true in
+example (α : Type) [DecidableEq α] (b p : α)
+    (ancestor next : α → α → Bool)
+    (h :
+      ∀ x y,
+        next x y =
+          (if b = x then decide (y = p ∨ ancestor p y = true) else ancestor x y)) :
+    next b p = true := by
+  veil_simp only [smtSimp] at h
+  veil_smt
+
+-- Conditional `decide` in the else branch.
+set_option warningAsError true in
+example (α : Type) [DecidableEq α] (b q p : α) (hq : b ≠ q)
+    (ancestor next : α → α → Bool)
+    (h :
+      ∀ x y,
+        (if b = x then ancestor x y else decide (y = p ∨ ancestor p y = true)) =
+          next x y) :
+    next q p = true := by
+  veil_simp only [smtSimp] at h
+  veil_smt
+
+-- Else-branch `decide` with the mirrored equation orientation.
+set_option warningAsError true in
+example (α : Type) [DecidableEq α] (b q p : α) (hq : b ≠ q)
+    (ancestor next : α → α → Bool)
+    (h :
+      ∀ x y,
+        next x y =
+          (if b = x then ancestor x y else decide (y = p ∨ ancestor p y = true))) :
+    next q p = true := by
+  veil_simp only [smtSimp] at h
+  veil_smt
