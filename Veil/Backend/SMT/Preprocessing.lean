@@ -65,6 +65,11 @@ theorem Bool.decide_eq_bool_eq {p : Prop} [dec : Decidable p] :
 theorem Bool.decide_eq_bool_eq' {p : Prop} [dec : Decidable p] :
   (@decide p dec = b) = ((b = true) = p) := by grind
 
+/--
+Eliminate a conditional `decide` used as the value of a `Bool`-valued point
+update before lean-smt translation. Otherwise its `Decidable` argument can
+survive as a first-class term and be misclassified as an SMT sort.
+-/
 @[smtSimp low]
 theorem Bool.ite_decide_eq_bool_eq {c p : Prop} [Decidable c] [dec : Decidable p]
     (b b' : Bool) :
